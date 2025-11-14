@@ -66,7 +66,8 @@ def load_video_frames(video_path, num_frames=100):
     # Stack frames: shape will be (num_frames, 64, 64)
     frames = np.stack(frames, axis=0)
     
-    # Convert to tensor and add batch dimension: (batch=1, frames, height=64, width=64)
+    # Convert to tensor and add batch dimension: (1, frames, 64, 64)
+    # This matches the working version exactly
     return torch.tensor(frames, dtype=torch.float32).unsqueeze(0)
 
 class BPRegressionModel(nn.Module):
@@ -117,9 +118,10 @@ def predict_bp(model, video_path):
     video_data = load_video_frames(video_path)
     
     with torch.no_grad():
-        # Add channel dimension to make it 5D: (1, 1, frames, 64, 64)
-        # This matches the working version exactly
-        prediction = model(video_data.unsqueeze(1), torch.tensor([bpm]).float())
+        # Add channel dimension: (1, frames, 64, 64) -> (1, 1, frames, 64, 64)
+        # This matches the working version exactly: video_data.unsqueeze(0)
+        # Note: unsqueeze(0) on (1, frames, 64, 64) adds dimension at position 0, making it (1, 1, frames, 64, 64)
+        prediction = model(video_data.unsqueeze(0), torch.tensor([bpm]).float())
         
     systolic, diastolic = prediction.squeeze().tolist()
     
