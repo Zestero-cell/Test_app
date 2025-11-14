@@ -104,11 +104,6 @@ class BPRegressionModel(nn.Module):
         # We need to add the channel dimension: (1, 1, 100, 64, 64)
         x = x.unsqueeze(1) # Add channel dimension
         
-        # --- THE BUG WAS HERE ---
-        # The line below was trying to unpack 5 dims from a 4-dim tensor
-        # It's no longer needed as we unsqueeze *before* this.
-        # batch_size, channels, frames, height, width = x.size()
-        
         # cnn_out shape: (1, 32, 25, 16, 16)
         cnn_out = self.cnn(x)
         
@@ -146,4 +141,6 @@ def predict_bp(model, video_path):
     with torch.no_grad():
         prediction = model(video_data, torch.tensor([bpm]).float())
     systolic, diastolic = prediction.squeeze().tolist()
-    return systolic, diastolic
+    # --- THIS IS THE ONLY CHANGE ---
+    return systolic, diastolic, bpm
+    # --- END OF CHANGE ---
