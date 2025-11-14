@@ -87,6 +87,8 @@ class BPRegressionModel(nn.Module):
             nn.MaxPool3d(kernel_size=(2, 2, 2)), # 50 -> 25
             nn.Flatten()
         )
+        # LSTM input size must match the CNN feature output
+        # Features = 32 channels * 16 * 16 = 8192
         self.lstm = nn.LSTM(input_size=32 * 16 * 16, hidden_size=128, num_layers=1, batch_first=True)
         self.fc = nn.Sequential(
             nn.Linear(128 + 1, 64),
@@ -94,11 +96,13 @@ class BPRegressionModel(nn.Module):
             nn.Linear(64, 2) 
         )
 
+    # --- THIS IS THE CORRECTED FORWARD FUNCTION ---
     def forward(self, x, bpm):
-        # --- THIS IS THE BUG FIX ---
-        # The x tensor is now 5D: (1, 1, 100, 64, 64)
-        # The line "x = x.unsqueeze(1)" has been REMOVED.
-        # ---
+        # x arrives as a 4D tensor: (batch=1, frames=100, height=64, width=64)
+        
+        # Add the 'channel' dimension to make it 5D for Conv3d
+        # Shape becomes: (1, 1, 100, 64, 64)
+        x = x.unsqueeze(1) 
         
         batch_size = x.size(0)
         
@@ -106,25 +110,25 @@ class BPRegressionModel(nn.Module):
         # Output shape is (batch_size, 32 * 25 * 16 * 16) = (1, 204800)
         cnn_out = self.cnn(x)
         
-        # --- THIS IS THE SECOND BUG FIX ---
-        # We must reshape based on the *output* frame dim (25), not the input (100).
-        # We are reshaping (1, 204800) into (1, 25, 8192)
+        # Reshape for LSTM: (batch, seq_len, features)
+        # The pooling layers reduced the frame dimension from 100 to 25.
+        # We must reshape to (1, 25, 8192)
         cnn_out = cnn_out.view(batch_size, 25, -1)
-        # --- END OF BUG FIX ---
         
+        # Pass to LSTM
         lstm_out, _ = self.lstm(cnn_out)
         lstm_last_out = lstm_out[:, -1, :] 
+        
+        # Combine with BPM
         combined = torch.cat((lstm_last_out, bpm.view(-1, 1)), dim=1)
         output = self.fc(combined)
         return output
+    # --- END OF CORRECTED FUNCTION ---
 
 
 def load_model():
-    # It now uses the MODEL_PATH variable
     model = BPRegressionModel()
-    
     # Load model state dict, mapping to CPU
-    # This ensures it works on Streamlit's CPU-only servers
     model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
     model.eval()
     return model
@@ -136,10 +140,10 @@ def predict_bp(model, video_path):
     video_data = load_video_frames(video_path) 
     
     with torch.no_grad():
-        # --- THIS IS THE FIX for the "5 vs 4" error ---
-        # We add the channel dimension here, just like your original code did.
-        # This makes video_data 5D: (1, 1, 100, 64, 64)
-        prediction = model(video_data.unsqueeze(1), torch.tensor([bpm]).float())
+        # --- THIS IS THE FIX ---
+        # We pass the 4D tensor directly to the model.
+        # The 'forward' function will handle adding the 5th dimension.
+        prediction = model(video_data, torch.tensor([bpm]).float())
         # --- END OF FIX ---
         
     systolic, diastolic = prediction.squeeze().tolist()
